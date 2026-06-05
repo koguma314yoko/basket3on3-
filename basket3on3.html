@@ -35,6 +35,22 @@ button:disabled{opacity:.45}
   .knob{left:38px;top:38px}
   .buttons button{width:66px;height:66px;font-size:12px}
 }
+@media(orientation:landscape) and (max-height:520px){
+  .topbar{padding:calc(4px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 4px max(8px,env(safe-area-inset-left));align-items:center}
+  .brand{font-size:16px;max-width:none}
+  .menu{gap:6px}
+  .menu button{height:30px;padding:0 8px;font-size:12px}
+  .ui{bottom:calc(6px + env(safe-area-inset-bottom))}
+  .stick{width:86px;height:86px;left:max(12px,env(safe-area-inset-left));bottom:4px}
+  .knob{width:30px;height:30px;left:28px;top:28px}
+  .buttons{right:max(10px,env(safe-area-inset-right));bottom:4px;gap:8px}
+  .buttons button{width:56px;height:56px;font-size:11px}
+  .panel{padding:14px;max-height:calc(100vh - 18px);overflow:auto}
+  .panel h1{font-size:28px}
+  .panel p{font-size:13px;margin:6px 0 10px}
+  .difficulty{grid-template-columns:repeat(3,1fr);margin:10px 0}
+  .difficulty button{height:42px}
+}
 </style>
 </head>
 <body>
@@ -166,8 +182,15 @@ function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 function rand(){return Math.random()}
 function otherTeam(team){return team==="my"?"enemy":"my"}
 
+function isPhoneLandscape(){
+  return canvas.width>canvas.height&&canvas.height<520;
+}
+
 function court(){
-  return {left:55,right:worldWidth-55,top:240,bottom:canvas.height-46,midY:canvas.height/2+28};
+  const compact=isPhoneLandscape();
+  const top=compact?Math.max(170,canvas.height*.46):240;
+  const bottom=compact?canvas.height-34:canvas.height-46;
+  return {left:55,right:worldWidth-55,top,bottom,midY:(top+bottom)/2};
 }
 function courtBoundsAtY(y){
   const c=court();
@@ -1187,7 +1210,10 @@ function update(){
 }
 
 function isoY(y){
-  return canvas.height*.20+(y-canvas.height*.20)*.68;
+  const compact=isPhoneLandscape();
+  const base=canvas.height*(compact ? .13 : .20);
+  const scale=compact ? .78 : .68;
+  return base+(y-base)*scale;
 }
 
 function updateCamera(){
@@ -1200,6 +1226,7 @@ function updateCamera(){
 
 function drawArena(){
   const theme=difficulty();
+  const compact=isPhoneLandscape();
   const sky=ctx.createLinearGradient(0,0,0,canvas.height);
   sky.addColorStop(0,"#0b0f14");
   sky.addColorStop(.34,theme.apron);
@@ -1220,11 +1247,13 @@ function drawArena(){
   }
 
   ctx.fillStyle="#0a0d12";
-  ctx.fillRect(0,50,worldWidth,118);
+  ctx.fillRect(0,compact?34:50,worldWidth,compact?78:118);
 
-  const rowH=18;
-  for(let row=0;row<5;row++){
-    const y=58+row*rowH;
+  const rowH=compact?13:18;
+  const rowStart=compact?38:58;
+  const rows=compact?4:5;
+  for(let row=0;row<rows;row++){
+    const y=rowStart+row*rowH;
     ctx.fillStyle=row%2?theme.seats:"#202834";
     ctx.fillRect(0,y,worldWidth,rowH-2);
     for(let x=16+(row%2)*13;x<worldWidth;x+=26){
@@ -1237,7 +1266,7 @@ function drawArena(){
     }
   }
 
-  const railY=154;
+  const railY=compact?96:154;
   ctx.fillStyle="#0008";
   ctx.fillRect(0,railY,worldWidth,18);
   ctx.fillStyle=theme.paint+"99";
@@ -1247,11 +1276,13 @@ function drawArena(){
   ctx.fillStyle="#ffffff10";
   ctx.fillRect(0,railY+18,worldWidth,2);
 
-  const apron=ctx.createLinearGradient(0,172,0,260);
+  const apronStart=railY+18;
+  const apronEnd=compact?190:260;
+  const apron=ctx.createLinearGradient(0,apronStart,0,apronEnd);
   apron.addColorStop(0,"#05070bcc");
   apron.addColorStop(1,"#18202a00");
   ctx.fillStyle=apron;
-  ctx.fillRect(0,172,worldWidth,88);
+  ctx.fillRect(0,apronStart,worldWidth,apronEnd-apronStart);
 }
 
 function courtPath(left,right,top,bottom){
@@ -1623,8 +1654,14 @@ function draw(){
   ctx.fillText(`MY ${myScore} - ${enemyScore} ENEMY`,canvas.width/2,32);
   ctx.fillText(`TIME ${Math.ceil(time)}`,canvas.width/2,60);
 
-  ctx.font="13px sans-serif";
-  ctx.fillText(`${difficulty().stageName} / 難易度：${difficulty().label} / J 奪う  K パス  L シュート / ゴール近くでL離す:ダンク`,canvas.width/2,canvas.height-8);
+  ctx.font=isPhoneLandscape()?"11px sans-serif":"13px sans-serif";
+  ctx.fillText(
+    isPhoneLandscape()
+      ? `${difficulty().stageName} / ${difficulty().label}`
+      : `${difficulty().stageName} / 難易度：${difficulty().label} / J 奪う  K パス  L シュート / ゴール近くでL離す:ダンク`,
+    canvas.width/2,
+    isPhoneLandscape()?78:canvas.height-8
+  );
 
   if(messageTimer>0){
     ctx.fillStyle="rgba(0,0,0,.55)";
