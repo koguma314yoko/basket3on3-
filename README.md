@@ -18,4 +18,4 @@ GitHub Pagesで公開する場合は、リポジトリの `Settings > Pages` か
 - `basket3on3.html`
 - `assets/ball/*.png`
 
-PSDファイルは作業用なので公開には不要です。
+
