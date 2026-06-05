@@ -10,14 +10,14 @@ canvas{display:block;margin:auto;background:#151515;touch-action:none}
 .topbar{position:fixed;left:0;right:0;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(10px + env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 10px max(12px,env(safe-area-inset-left));box-sizing:border-box;pointer-events:none}
 .brand{font-weight:900;letter-spacing:.08em;text-shadow:0 2px 8px #000;font-size:clamp(18px,3vw,26px)}
 .menu{display:flex;gap:8px;pointer-events:auto;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.menu button,.difficulty button,.primary{width:auto;height:38px;border-radius:8px;border:1px solid #ffffff33;background:#f6f8fb;color:#131820;font-weight:800;padding:0 14px;box-shadow:0 4px 12px #0005}
+.menu button,.difficulty button,.primary{width:auto;height:38px;border-radius:8px;border:1px solid #ffffff33;background:#f6f8fb;color:#131820;font-weight:800;font-size:16px;padding:0 14px;box-shadow:0 4px 12px #0005}
 .menu button.secondary{background:#29313d;color:#fff}
 button:disabled{opacity:.45}
 .ui{position:fixed;bottom:calc(14px + env(safe-area-inset-bottom));width:100%;pointer-events:none;z-index:1}
 .stick{position:absolute;left:max(20px,env(safe-area-inset-left));bottom:10px;width:120px;height:120px;border:2px solid #ffffff88;border-radius:50%;pointer-events:auto;background:#0005;touch-action:none}
 .knob{position:absolute;left:42px;top:42px;width:36px;height:36px;background:#ffffffaa;border-radius:50%}
 .buttons{position:absolute;right:max(14px,env(safe-area-inset-right));bottom:8px;display:flex;gap:10px;pointer-events:auto}
-.buttons button{width:74px;height:74px;border-radius:50%;border:none;font-weight:900;background:#eee;color:#121820;box-shadow:0 5px 16px #0007;touch-action:none}
+.buttons button{width:74px;height:74px;border-radius:50%;border:none;font-weight:900;font-size:16px;background:#eee;color:#121820;box-shadow:0 5px 16px #0007;touch-action:none}
 .overlay{position:fixed;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#111821cc,#05070add);pointer-events:auto}
 .panel{width:min(520px,calc(100vw - 34px));padding:26px;border:1px solid #ffffff24;background:#151b24e8;border-radius:8px;box-shadow:0 22px 60px #0009;text-align:center}
 .panel h1{margin:0 0 8px;font-size:clamp(30px,8vw,54px);line-height:1}
@@ -33,21 +33,21 @@ button:disabled{opacity:.45}
   .difficulty{grid-template-columns:1fr}
   .stick{width:112px;height:112px}
   .knob{left:38px;top:38px}
-  .buttons button{width:66px;height:66px;font-size:12px}
+  .buttons button{width:66px;height:66px;font-size:16px}
 }
 @media(orientation:landscape) and (max-height:520px){
   .topbar{padding:calc(4px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 4px max(8px,env(safe-area-inset-left));align-items:center}
   .brand{font-size:16px;max-width:none}
   .menu{gap:6px}
-  .menu button{height:30px;padding:0 8px;font-size:12px}
+  .menu button{height:32px;padding:0 8px;font-size:16px}
   .ui{bottom:calc(6px + env(safe-area-inset-bottom))}
   .stick{width:86px;height:86px;left:max(12px,env(safe-area-inset-left));bottom:4px}
   .knob{width:30px;height:30px;left:28px;top:28px}
   .buttons{right:max(10px,env(safe-area-inset-right));bottom:4px;gap:8px}
-  .buttons button{width:56px;height:56px;font-size:11px}
+  .buttons button{width:58px;height:58px;font-size:16px}
   .panel{padding:14px;max-height:calc(100vh - 18px);overflow:auto}
   .panel h1{font-size:28px}
-  .panel p{font-size:13px;margin:6px 0 10px}
+  .panel p{font-size:16px;margin:6px 0 10px}
   .difficulty{grid-template-columns:repeat(3,1fr);margin:10px 0}
   .difficulty button{height:42px}
 }
@@ -116,6 +116,20 @@ resize();
 addEventListener("resize",resize);
 if(window.visualViewport)visualViewport.addEventListener("resize",resize);
 addEventListener("contextmenu",e=>e.preventDefault());
+["touchstart","touchmove","touchend"].forEach(type=>{
+  document.addEventListener(type,e=>{
+    if(e.touches&&e.touches.length>1)e.preventDefault();
+  },{passive:false});
+});
+["gesturestart","gesturechange","gestureend"].forEach(type=>{
+  document.addEventListener(type,e=>e.preventDefault(),{passive:false});
+});
+let lastTouchEnd=0;
+document.addEventListener("touchend",e=>{
+  const now=Date.now();
+  if(now-lastTouchEnd<350)e.preventDefault();
+  lastTouchEnd=now;
+},{passive:false});
 
 const keys={};
 addEventListener("keydown",e=>{
@@ -167,17 +181,20 @@ if(window.PointerEvent){
 }
 
 function bindHold(btn,onStart,onEnd){
+  let holding=false;
+  const start=()=>{if(holding)return;holding=true;onStart()};
+  const end=()=>{if(!holding)return;holding=false;onEnd()};
   if(window.PointerEvent){
-    btn.addEventListener("pointerdown",e=>{e.preventDefault();btn.setPointerCapture(e.pointerId);onStart()});
-    btn.addEventListener("pointerup",e=>{e.preventDefault();onEnd()});
-    btn.addEventListener("pointercancel",e=>{e.preventDefault();onEnd()});
-    btn.addEventListener("lostpointercapture",onEnd);
+    btn.addEventListener("pointerdown",e=>{e.preventDefault();btn.setPointerCapture(e.pointerId);start()});
+    btn.addEventListener("pointerup",e=>{e.preventDefault();end()});
+    btn.addEventListener("pointercancel",e=>{e.preventDefault();end()});
+    btn.addEventListener("lostpointercapture",end);
   }else{
-    btn.addEventListener("touchstart",e=>{e.preventDefault();onStart()},{passive:false});
-    btn.addEventListener("touchend",e=>{e.preventDefault();onEnd()},{passive:false});
-    btn.addEventListener("mousedown",onStart);
-    btn.addEventListener("mouseup",onEnd);
-    btn.addEventListener("mouseleave",onEnd);
+    btn.addEventListener("touchstart",e=>{e.preventDefault();start()},{passive:false});
+    btn.addEventListener("touchend",e=>{e.preventDefault();end()},{passive:false});
+    btn.addEventListener("mousedown",start);
+    btn.addEventListener("mouseup",end);
+    btn.addEventListener("mouseleave",end);
   }
 }
 
