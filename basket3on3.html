@@ -10,7 +10,7 @@ canvas{display:block;margin:auto;background:#151515;touch-action:none}
 .topbar{position:fixed;left:0;right:0;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(10px + env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 10px max(12px,env(safe-area-inset-left));box-sizing:border-box;pointer-events:none}
 .brand{font-weight:900;letter-spacing:.08em;text-shadow:0 2px 8px #000;font-size:clamp(18px,3vw,26px)}
 .menu{display:flex;gap:8px;pointer-events:auto;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.menu button,.difficulty button,.primary{width:auto;height:38px;border-radius:8px;border:1px solid #ffffff33;background:#f6f8fb;color:#131820;font-weight:800;font-size:16px;padding:0 14px;box-shadow:0 4px 12px #0005}
+.menu button,.difficulty button,.duration button,.primary{width:auto;height:38px;border-radius:8px;border:1px solid #ffffff33;background:#f6f8fb;color:#131820;font-weight:800;font-size:16px;padding:0 14px;box-shadow:0 4px 12px #0005}
 .menu button.secondary{background:#29313d;color:#fff}
 button:disabled{opacity:.45}
 .ui{position:fixed;bottom:calc(14px + env(safe-area-inset-bottom));width:100%;pointer-events:none;z-index:1}
@@ -22,15 +22,20 @@ button:disabled{opacity:.45}
 .panel{width:min(520px,calc(100vw - 34px));padding:26px;border:1px solid #ffffff24;background:#151b24e8;border-radius:8px;box-shadow:0 22px 60px #0009;text-align:center}
 .panel h1{margin:0 0 8px;font-size:clamp(30px,8vw,54px);line-height:1}
 .panel p{margin:8px 0 18px;color:#d7e0eb;line-height:1.55}
-.difficulty{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0}
-.difficulty button{height:58px;background:#202936;color:#eaf1f8}
-.difficulty button.active{background:#f3c15f;color:#111820;border-color:#fff}
+.difficulty,.duration{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0}
+.duration{grid-template-columns:repeat(2,1fr);margin-top:10px}
+.difficulty button,.duration button{height:58px;background:#202936;color:#eaf1f8}
+.difficulty button.active,.duration button.active{background:#f3c15f;color:#111820;border-color:#fff}
+.panelActions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.offscreen{position:fixed;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:#020305;color:#dce5ef;text-align:center;font-weight:800;font-size:22px}
+.offscreen.hidden{display:none}
 .hidden{display:none}
 @media(max-width:620px){
   .topbar{align-items:flex-start;padding:calc(8px + env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) 8px max(10px,env(safe-area-inset-left))}
   .brand{max-width:160px}
   .menu button{height:34px;padding:0 10px}
   .difficulty{grid-template-columns:1fr}
+  .duration{grid-template-columns:1fr}
   .stick{width:112px;height:112px}
   .knob{left:38px;top:38px}
   .buttons button{width:66px;height:66px;font-size:16px}
@@ -50,6 +55,8 @@ button:disabled{opacity:.45}
   .panel p{font-size:16px;margin:6px 0 10px}
   .difficulty{grid-template-columns:repeat(3,1fr);margin:10px 0}
   .difficulty button{height:42px}
+  .duration{grid-template-columns:repeat(2,1fr);margin:8px 0}
+  .duration button{height:38px}
 }
 </style>
 </head>
@@ -75,8 +82,20 @@ button:disabled{opacity:.45}
       <button data-difficulty="intermediate">中級</button>
       <button data-difficulty="advanced">上級</button>
     </div>
-    <button id="startBtn" class="primary">ゲーム開始</button>
+    <div class="duration">
+      <button data-duration="60" class="active">1分</button>
+      <button data-duration="180">3分</button>
+    </div>
+    <div class="panelActions">
+      <button id="startBtn" class="primary">ゲーム開始</button>
+      <button id="quitBtn" class="primary">ゲーム終了</button>
+      <button id="appOffBtn" class="primary">アプリOFF</button>
+    </div>
   </div>
+</div>
+
+<div class="offscreen hidden" id="offscreen">
+  <div>アプリOFF<br><span style="font-size:14px;font-weight:600">再開するにはページを再読み込みしてください</span></div>
 </div>
 
 <div class="ui">
@@ -93,15 +112,37 @@ const canvas=document.getElementById("game");
 const ctx=canvas.getContext("2d");
 const titleOverlay=document.getElementById("titleOverlay");
 const startBtn=document.getElementById("startBtn");
+const quitBtn=document.getElementById("quitBtn");
+const appOffBtn=document.getElementById("appOffBtn");
+const offscreen=document.getElementById("offscreen");
 const resumeBtn=document.getElementById("resumeBtn");
 const pauseBtn=document.getElementById("pauseBtn");
 const endBtn=document.getElementById("endBtn");
 const difficultyButtons=[...document.querySelectorAll("[data-difficulty]")];
+const durationButtons=[...document.querySelectorAll("[data-duration]")];
 const introText="難易度を選んで試合開始。初級はシュートが入りやすく、中級、上級へ進むほどタイミングと距離が大切になります。";
 let worldWidth=0;
 let worldHeight=0;
 let cameraX=0;
 let cameraY=0;
+let gameDuration=60;
+let audioCtx=null;
+let soundEnabled=false;
+let lastDribbleSound=0;
+let lastDribbleBounce=99;
+const soundFiles={
+  dribble:"assets/sound/dribble.mp3",
+  pass:"assets/sound/pass.mp3",
+  shoot:"assets/sound/shoot.mp3"
+};
+const soundTuning={
+  dribble:{offset:.055,duration:.22,volume:.8},
+  pass:{offset:.02,duration:.28,volume:.85},
+  shoot:{offset:.045,duration:.55,volume:.9}
+};
+const soundPlayers={};
+const soundBuffers={};
+const soundLoading={};
 
 function resize(){
   const viewport=window.visualViewport||window;
@@ -116,6 +157,8 @@ resize();
 addEventListener("resize",resize);
 if(window.visualViewport)visualViewport.addEventListener("resize",resize);
 addEventListener("contextmenu",e=>e.preventDefault());
+document.addEventListener("pointerdown",resumeAudio,{once:true});
+document.addEventListener("touchstart",resumeAudio,{once:true,passive:true});
 ["touchstart","touchmove","touchend"].forEach(type=>{
   document.addEventListener(type,e=>{
     if(e.touches&&e.touches.length>1)e.preventDefault();
@@ -217,6 +260,118 @@ function bindTap(btn,onTap,cooldown=260){
     btn.addEventListener("touchstart",tap,{passive:false});
     btn.addEventListener("click",e=>e.preventDefault());
   }
+}
+
+function initAudio(){
+  Object.entries(soundFiles).forEach(([key,src])=>{
+    if(soundPlayers[key])return;
+    const audio=new Audio(src);
+    audio.preload="auto";
+    audio.playsInline=true;
+    audio.load();
+    soundPlayers[key]=audio;
+  });
+  if(audioCtx)return;
+  const AudioCtor=window.AudioContext||window.webkitAudioContext;
+  if(!AudioCtor)return;
+  audioCtx=new AudioCtor();
+  soundEnabled=true;
+  preloadSoundBuffers();
+}
+
+function resumeAudio(){
+  initAudio();
+  if(audioCtx&&audioCtx.state==="suspended")audioCtx.resume().then(preloadSoundBuffers).catch(()=>{});
+  else preloadSoundBuffers();
+  unlockFileSounds();
+}
+
+function preloadSoundBuffers(){
+  if(!audioCtx||typeof fetch==="undefined")return;
+  Object.entries(soundFiles).forEach(([key,src])=>{
+    if(soundBuffers[key]||soundLoading[key])return;
+    soundLoading[key]=true;
+    fetch(src)
+      .then(res=>res.arrayBuffer())
+      .then(data=>audioCtx.decodeAudioData(data))
+      .then(buffer=>{soundBuffers[key]=buffer})
+      .catch(()=>{})
+      .finally(()=>{soundLoading[key]=false});
+  });
+}
+
+function unlockFileSounds(){
+  Object.values(soundPlayers).forEach(audio=>{
+    const oldVolume=audio.volume;
+    audio.volume=0;
+    const promise=audio.play();
+    if(promise&&promise.then){
+      promise.then(()=>{
+        audio.pause();
+        audio.currentTime=0;
+        audio.volume=oldVolume;
+      }).catch(()=>{
+        audio.volume=oldVolume;
+      });
+    }else{
+      audio.pause();
+      audio.currentTime=0;
+      audio.volume=oldVolume;
+    }
+  });
+}
+
+function playFileSound(key,volume=.85){
+  if(!soundEnabled)return false;
+  if(audioCtx&&soundBuffers[key]){
+    try{
+      const tuning=soundTuning[key]||{};
+      const offset=Math.min(tuning.offset||0,Math.max(0,soundBuffers[key].duration-.01));
+      const duration=Math.min(tuning.duration||soundBuffers[key].duration,soundBuffers[key].duration-offset);
+      const source=audioCtx.createBufferSource();
+      const gain=audioCtx.createGain();
+      source.buffer=soundBuffers[key];
+      gain.gain.value=tuning.volume||volume;
+      source.connect(gain).connect(audioCtx.destination);
+      source.start(audioCtx.currentTime,offset,duration);
+      return true;
+    }catch(e){}
+  }
+  return false;
+}
+
+function playTone(freq=180,duration=.08,type="sine",gain=.08){
+  if(!soundEnabled||!audioCtx)return;
+  const now=audioCtx.currentTime;
+  const osc=audioCtx.createOscillator();
+  const vol=audioCtx.createGain();
+  osc.type=type;
+  osc.frequency.setValueAtTime(freq,now);
+  vol.gain.setValueAtTime(gain,now);
+  vol.gain.exponentialRampToValueAtTime(.001,now+duration);
+  osc.connect(vol).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now+duration);
+}
+
+function playDribble(){
+  if(playFileSound("dribble",.75))return;
+  playTone(92,.055,"triangle",.11);
+  setTimeout(()=>playTone(58,.035,"sine",.045),22);
+}
+
+function playPassSound(){
+  if(playFileSound("pass",.8))return;
+  playTone(260,.07,"square",.045);
+}
+function playStealSound(){playTone(150,.08,"sawtooth",.055)}
+function playShotSound(){
+  if(playFileSound("shoot",.85))return;
+  playTone(360,.11,"sine",.055);
+}
+function playScoreSound(){
+  playTone(520,.08,"sine",.07);
+  setTimeout(()=>playTone(700,.12,"sine",.06),80);
 }
 
 function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
@@ -531,7 +686,7 @@ function setupInbound(possessionTeam, reason="スローイン", spot=null){
 }
 
 function resetMatch(){
-  time=60;
+  time=gameDuration;
   myScore=0;
   enemyScore=0;
   gameOver=false;
@@ -542,6 +697,8 @@ function resetMatch(){
   inboundShotLock=0;
   cameraX=0;
   cameraY=0;
+  lastDribbleSound=0;
+  lastDribbleBounce=99;
   chooseBallImage();
   prevPad={a:false,b:false,x:false};
   resetPositions("my");
@@ -551,15 +708,22 @@ function resetMatch(){
 function refreshUI(){
   titleOverlay.classList.toggle("hidden",gameState==="playing");
   startBtn.textContent=gameOver?"もう一度プレイ":"ゲーム開始";
+  quitBtn.style.display=gameOver||gameState==="paused"||gameState==="ended"?"inline-block":"none";
+  appOffBtn.style.display=gameOver||gameState==="paused"||gameState==="ended"||gameState==="title"?"inline-block":"none";
   resumeBtn.disabled=gameState!=="paused";
   pauseBtn.disabled=gameState!=="playing";
   endBtn.disabled=gameState!=="playing"&&gameState!=="paused";
   difficultyButtons.forEach(btn=>{
     btn.classList.toggle("active",btn.dataset.difficulty===currentDifficulty);
   });
+  durationButtons.forEach(btn=>{
+    btn.classList.toggle("active",Number(btn.dataset.duration)===gameDuration);
+  });
 }
 
 function startGame(){
+  resumeAudio();
+  offscreen.classList.add("hidden");
   titleOverlay.querySelector("p").textContent=introText;
   resetMatch();
   gameState="playing";
@@ -589,6 +753,23 @@ function endGame(){
   refreshUI();
 }
 
+function quitGame(){
+  gameOver=false;
+  gameState="title";
+  titleOverlay.querySelector("p").textContent=introText;
+  resetMatch();
+  refreshUI();
+}
+
+function appOff(){
+  gameOver=true;
+  gameState="off";
+  soundEnabled=false;
+  if(audioCtx&&audioCtx.state!=="closed")audioCtx.suspend();
+  titleOverlay.classList.add("hidden");
+  offscreen.classList.remove("hidden");
+}
+
 function togglePause(){
   if(gameState==="playing")pauseGame();
   else if(gameState==="paused")resumeGame();
@@ -601,7 +782,16 @@ difficultyButtons.forEach(btn=>{
     refreshUI();
   });
 });
+durationButtons.forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    gameDuration=Number(btn.dataset.duration);
+    titleOverlay.querySelector("p").textContent=introText;
+    refreshUI();
+  });
+});
 startBtn.onclick=startGame;
+quitBtn.onclick=quitGame;
+appOffBtn.onclick=appOff;
 resumeBtn.onclick=resumeGame;
 pauseBtn.onclick=pauseGame;
 endBtn.onclick=endGame;
@@ -802,7 +992,10 @@ function steal(p){
     let chance=.34*difficulty().stealMul;
     if(h.charging)chance+=.34;
     if(h.charge>.65)chance+=.18;
-    if(rand()<chance)setHolder(p);
+    if(rand()<chance){
+      playStealSound();
+      setHolder(p);
+    }
   }
 }
 
@@ -818,6 +1011,7 @@ function pass(p,target=null){
   if(!mate)return;
 
   p.passCd=25;
+  playPassSound();
   clearHolder();
 
   ball.mode="pass";
@@ -840,6 +1034,7 @@ function shoot(p,charge){
     return;
   }
 
+  playShotSound();
   const setting=difficulty();
   const green=charge>.38&&charge<.68;
   const early=charge<.25;
@@ -1162,6 +1357,7 @@ function updateShot(){
     if(ball.shotSuccess){
       if(ball.team==="my")myScore+=ball.shotPoint;
       else enemyScore+=ball.shotPoint;
+      playScoreSound();
 
       setupInbound(otherTeam(ball.team),ball.shotDunk?`ダンク！ ${ball.shotPoint}点！`:`${ball.shotPoint}点！`,{x:to.x,y:to.y});
     }else{
@@ -1203,6 +1399,12 @@ function updateBall(){
     ball.x=h.x+h.dir*14;
     ball.y=h.y+13;
     ball.z=bounce;
+    const now=performance.now();
+    if(bounce<5.2&&bounce<lastDribbleBounce&&now-lastDribbleSound>210){
+      playDribble();
+      lastDribbleSound=now;
+    }
+    lastDribbleBounce=bounce;
   }
   else if(ball.mode==="pass"){
     updatePass();
