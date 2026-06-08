@@ -198,6 +198,27 @@ function bindHold(btn,onStart,onEnd){
   }
 }
 
+function bindTap(btn,onTap,cooldown=260){
+  let last=0;
+  const tap=e=>{
+    if(e){
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const now=performance.now();
+    if(now-last<cooldown)return;
+    last=now;
+    onTap();
+  };
+  if(window.PointerEvent){
+    btn.addEventListener("pointerdown",tap);
+    btn.addEventListener("click",e=>e.preventDefault());
+  }else{
+    btn.addEventListener("touchstart",tap,{passive:false});
+    btn.addEventListener("click",e=>e.preventDefault());
+  }
+}
+
 function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 function rand(){return Math.random()}
@@ -750,6 +771,13 @@ function startCharge(p){
   if(inboundTimer>0)return;
   if(inboundShotLock>0)return;
   if(!p||!p.hasBall||p.shootCd>0||ball.mode!=="held")return;
+  if(isBackcourtShot(p.team,p.x)){
+    if(p.team==="my"){
+      message="相手陣地に入ってからシュート！";
+      messageTimer=.9;
+    }
+    return;
+  }
   p.charging=true;
 }
 
@@ -804,6 +832,13 @@ function shoot(p,charge){
   if(gameState!=="playing")return;
   if(inboundTimer>0)return;
   if(!p||!p.hasBall||p.shootCd>0)return;
+  if(isBackcourtShot(p.team,p.x)){
+    if(p.team==="my"){
+      message="相手陣地に入ってからシュート！";
+      messageTimer=.9;
+    }
+    return;
+  }
 
   const setting=difficulty();
   const green=charge>.38&&charge<.68;
@@ -896,8 +931,8 @@ function manualControl(p){
   prevPad.x=pad.xbtn;
 }
 
-document.getElementById("stealBtn").onclick=()=>steal(controlPlayerRef);
-document.getElementById("passBtn").onclick=()=>pass(controlPlayerRef);
+bindTap(document.getElementById("stealBtn"),()=>steal(controlPlayerRef),220);
+bindTap(document.getElementById("passBtn"),()=>pass(controlPlayerRef),420);
 bindHold(document.getElementById("shootBtn"),()=>startCharge(controlPlayerRef),()=>releaseShot(controlPlayerRef));
 
 function myAI(p){
@@ -1711,7 +1746,7 @@ function draw(){
   ctx.fillText(
     isPhoneLandscape()
       ? `${difficulty().stageName} / ${difficulty().label}`
-      : `${difficulty().stageName} / 難易度：${difficulty().label} / J 奪う  K パス  L シュート / ゴール近くでL離す:ダンク`,
+      : `${difficulty().stageName} / 難易度：${difficulty().label} / J 奪う  K パス  L シュート / 相手陣地でシュート可`,
     canvas.width/2,
     isPhoneLandscape()?78:canvas.height-8
   );
