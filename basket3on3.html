@@ -307,6 +307,10 @@ const difficultySettings={
     enemyBoost:-.04,
     enemySpeed:.88,
     stealMul:.78,
+    allyDefenseSpeed:.86,
+    allyMarkTightness:.22,
+    allyHelpDefense:.25,
+    allyStealChance:.018,
     maxEnemy:.72,
     maxPlayer:.98
   },
@@ -327,6 +331,10 @@ const difficultySettings={
     enemyBoost:0,
     enemySpeed:.96,
     stealMul:.92,
+    allyDefenseSpeed:1.0,
+    allyMarkTightness:.34,
+    allyHelpDefense:.48,
+    allyStealChance:.032,
     maxEnemy:.76,
     maxPlayer:.96
   },
@@ -347,6 +355,10 @@ const difficultySettings={
     enemyBoost:.03,
     enemySpeed:1.04,
     stealMul:1.08,
+    allyDefenseSpeed:1.12,
+    allyMarkTightness:.48,
+    allyHelpDefense:.72,
+    allyStealChance:.052,
     maxEnemy:.80,
     maxPlayer:.92
   }
@@ -698,6 +710,41 @@ function moveToward(p,t,mul=1){
   }
 }
 
+function defendEnemyPossession(p,h){
+  const setting=difficulty();
+  const myTeam=getTeam("my");
+  const aiDefenders=myTeam.filter(m=>m!==controlPlayerRef);
+  const primary=aiDefenders
+    .sort((a,b)=>dist(a,h)-dist(b,h))[0];
+  const enemyMates=getTeam("enemy").filter(e=>e!==h);
+  const myHoop=teamHoop("enemy");
+
+  if(p===primary){
+    const side=p.y<h.y?-1:1;
+    const chaseTarget={
+      x:h.x+attackDir(h.team)*(28+18*setting.allyHelpDefense),
+      y:h.y+side*18
+    };
+    moveToward(p,clampPoint(chaseTarget,18),setting.allyDefenseSpeed);
+    if(dist(p,h)<50&&rand()<setting.allyStealChance)steal(p);
+    return;
+  }
+
+  const mark=enemyMates
+    .sort((a,b)=>Math.abs(a.y-p.y)-Math.abs(b.y-p.y))[p.index%Math.max(1,enemyMates.length)]||enemyMates[0]||h;
+  const laneT=setting.allyMarkTightness;
+  const passLane={
+    x:mark.x+(h.x-mark.x)*laneT,
+    y:mark.y+(h.y-mark.y)*laneT
+  };
+  const guardBias={
+    x:passLane.x+(myHoop.x-passLane.x)*(.08+.16*setting.allyHelpDefense),
+    y:passLane.y+(myHoop.y-passLane.y)*(.04+.08*setting.allyHelpDefense)
+  };
+  moveToward(p,clampPoint(guardBias,18),.84+.22*setting.allyDefenseSpeed);
+  if(dist(p,h)<54&&rand()<setting.allyStealChance*.45)steal(p);
+}
+
 function startCharge(p){
   if(gameState!=="playing")return;
   if(inboundTimer>0)return;
@@ -888,24 +935,7 @@ function myAI(p){
   }
 
   if(h&&h.team==="enemy"){
-    const enemies=getTeam("enemy");
-    const goalGuard={x:worldWidth*.25,y:c.midY};
-
-    if(p.index===0){
-      moveToward(p,h,.95);
-      if(dist(p,h)<46)steal(p);
-    }else{
-      if(h.x<worldWidth*.35){
-        const guardSpot={
-          x:goalGuard.x+(p.index===1?12:-8),
-          y:p.index===1?c.midY-68:c.midY+68
-        };
-        moveToward(p,guardSpot,.84);
-      }else{
-        const mark=enemies[p.index]||enemies[1]||h;
-        moveToward(p,{x:mark.x-38,y:mark.y},.78);
-      }
-    }
+    defendEnemyPossession(p,h);
     return;
   }
 
