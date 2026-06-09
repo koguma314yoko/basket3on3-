@@ -456,7 +456,8 @@ function clampPoint(t,margin=22){
   };
 }
 
-let time=60,myScore=0,enemyScore=0,gameOver=false,last=performance.now(),frame=0;
+const FIXED_DT=1/60;
+let time=60,myScore=0,enemyScore=0,gameOver=false,last=performance.now(),accumulator=0,frame=0;
 let gameState="title";
 let currentDifficulty="beginner";
 let prevPad={a:false,b:false,x:false};
@@ -703,6 +704,7 @@ function resetMatch(){
   prevPad={a:false,b:false,x:false};
   resetPositions("my");
   last=performance.now();
+  accumulator=0;
 }
 
 function refreshUI(){
@@ -742,6 +744,7 @@ function resumeGame(){
   if(gameState==="paused"){
     gameState="playing";
     last=performance.now();
+    accumulator=0;
     refreshUI();
   }
 }
@@ -1425,11 +1428,7 @@ function updateBall(){
   }
 }
 
-function update(){
-  const now=performance.now();
-  const dt=(now-last)/1000;
-  last=now;
-
+function update(dt=FIXED_DT){
   if(gameState!=="playing"||gameOver)return;
 
   frame++;
@@ -1975,12 +1974,21 @@ function draw(){
   }
 }
 
-function loop(){
-  update();
+function loop(now=performance.now()){
+  const elapsed=Math.min(.08,(now-last)/1000);
+  last=now;
+  accumulator+=elapsed;
+  let steps=0;
+  while(accumulator>=FIXED_DT&&steps<5){
+    update(FIXED_DT);
+    accumulator-=FIXED_DT;
+    steps++;
+  }
+  if(steps===5)accumulator=0;
   draw();
   requestAnimationFrame(loop);
 }
-loop();
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
