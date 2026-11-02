@@ -150,7 +150,7 @@ function resize(){
   canvas.width=Math.min(viewport.width||window.innerWidth,960);
   canvas.height=Math.min(viewport.height||window.innerHeight,640);
   worldWidth=Math.max(1120,canvas.width*1.25);
-  worldHeight=isPhoneLandscape()?640:canvas.height;
+  worldHeight=820;
   cameraX=Math.max(0,Math.min(cameraX,Math.max(0,worldWidth-canvas.width)));
   cameraY=Math.max(0,Math.min(cameraY,Math.max(0,worldHeight-canvas.height)));
 }
@@ -425,6 +425,8 @@ const ballImages=typeof Image==="undefined"?[]:BALL_IMAGE_PATHS.map(src=>{
 });
 let selectedBallImage=null;
 const PLAYER_FRAME_W=160;
+const hoopImage=new Image();
+hoopImage.src="assets/hoop/hoop-left.png";
 const PLAYER_FRAME_H=240;
 const PLAYER_SPRITE_SCALE=.42;
 const PLAYER_SPRITE_DEFS={
@@ -465,7 +467,7 @@ if(typeof Image!=="undefined"){
       const img=new Image();
       const sprite={img,frames:def.frames};
       playerSprites[key][name]=sprite;
-      img.src=def.src+"?v=child3";
+      img.src=def.src+"?v=child4";
     });
   });
 }
@@ -488,8 +490,8 @@ function chooseBallImage(){
 }
 function teamHoop(team){
   return team==="my"
-    ?{x:worldWidth-75,y:worldHeight/2}
-    :{x:75,y:worldHeight/2};
+    ?{x:worldWidth-75,y:court().midY}
+    :{x:75,y:court().midY};
 }
 function attackDir(team){return team==="my"?1:-1}
 function clampPoint(t,margin=22){
@@ -509,6 +511,11 @@ let currentDifficulty="beginner";
 let prevPad={a:false,b:false,x:false};
 let message="";
 let messageTimer=0;
+let passLink=null;
+let scoreEffect=null;
+function linkedShot(p){
+  return !!(passLink&&passLink.receiver===p&&p.hasBall&&frame-passLink.at<=120&&dist(p,passLink)<70);
+}
 let inboundTimer=0;
 let inboundShotLock=0;
 
@@ -680,6 +687,8 @@ function clearHolder(){
 }
 
 function setHolder(p){
+  const assisted=ball.mode==="pass"&&ball.target===p&&ball.team===p.team;
+  passLink=assisted?{receiver:p,at:frame,x:p.x,y:p.y}:null;
   clearHolder();
   p.hasBall=true;
   p.dir=attackDir(p.team);
@@ -760,6 +769,8 @@ function setupInbound(possessionTeam, reason="スローイン", spot=null){
 }
 
 function resetMatch(){
+  passLink=null;
+  scoreEffect=null;
   time=gameDuration;
   myScore=0;
   enemyScore=0;
@@ -1132,6 +1143,8 @@ function shoot(p,charge){
   }:null;
 
   let chance=shotChanceEstimate(p,charge);
+  const assist=linkedShot(p);
+  if(assist)chance+=.08;
   if(green)chance+=p.team==="my"?setting.greenBoost:.05;
   if(early)chance-=p.team==="my"?setting.earlyPenalty:.12;
   if(over)chance-=p.team==="my"?setting.overPenalty:.20;
@@ -1143,6 +1156,8 @@ function shoot(p,charge){
   clearHolder();
 
   ball.mode="shot";
+  ball.assisted=assist;
+  passLink=null;
   ball.shotT=0;
   ball.shotFrom={x:p.x,y:p.y};
   ball.shotTo=hoop;
@@ -1505,7 +1520,7 @@ function updateShot(){
       const hand={x:s.x+dir*18,y:s.y-10,z:45};
       ball.x=hand.x+(to.x-hand.x)*rt;
       ball.y=hand.y+(to.y-hand.y)*rt;
-      ball.z=hand.z+(12-hand.z)*rt;
+      ball.z=hand.z+(24-hand.z)*rt;
     }
   }else{
     ball.x=from.x+(to.x-from.x)*t;
@@ -1518,8 +1533,11 @@ function updateShot(){
       if(ball.team==="my")myScore+=ball.shotPoint;
       else enemyScore+=ball.shotPoint;
       playScoreSound();
+      scoreEffect={remaining:1.8,dunk:ball.shotDunk,team:ball.team,points:ball.shotPoint,
+        label:ball.assisted?"アシスト！":ball.shotDunk?"ダンク！":ball.shotPoint===3?"3ポイント！":"ナイスシュート！"};
 
       setupInbound(otherTeam(ball.team),ball.shotDunk?`ダンク！ ${ball.shotPoint}点！`:`${ball.shotPoint}点！`,{x:to.x,y:to.y});
+      messageTimer=0;
     }else{
       ball.mode="loose";
       ball.x=to.x+(rand()-.5)*55;
@@ -1600,6 +1618,7 @@ function update(dt=FIXED_DT){
   }
 
   if(messageTimer>0)messageTimer-=dt;
+  if(scoreEffect){scoreEffect.remaining-=dt;if(scoreEffect.remaining<=0)scoreEffect=null;}
   if(inboundTimer>0)inboundTimer-=dt;
   if(inboundShotLock>0)inboundShotLock-=dt;
 
@@ -1662,11 +1681,20 @@ function updateCamera(){
   const h=getHolder();
   const target=h&&h.team==="my"?h:controlPlayerRef||h||ball;
   const desired=(target?.x||worldWidth/2)-canvas.width*.5;
-  const desiredY=isoY(target?.y||worldHeight/2)-canvas.height*.45;
   cameraX+= (desired-cameraX)*.12;
-  cameraY+= (desiredY-cameraY)*.12;
+  // Keep the whole court stationary when it fits; scroll only at the edges.
+  const top=isoY(court().top)-75,bottom=isoY(court().bottom)+65;
+  const upper=95,lower=canvas.height-100;
+  const maxY=Math.max(0,bottom-lower);
+  if(bottom-top<=lower-upper){
+    cameraY=Math.max(0,top-upper);
+  }else if(gameState==="playing"&&inboundTimer<=0){
+    const screenY=isoY(target?.y??court().midY)-cameraY;
+    if(screenY<upper)cameraY-=Math.min(1.5,upper-screenY);
+    else if(screenY>lower)cameraY+=Math.min(1.5,screenY-lower);
+  }
   cameraX=clamp(cameraX,0,Math.max(0,worldWidth-canvas.width));
-  cameraY=clamp(cameraY,0,Math.max(0,worldHeight-canvas.height));
+  cameraY=clamp(cameraY,0,maxY);
 }
 
 function drawArena(){
@@ -1877,7 +1905,17 @@ function drawThreePointLine(side,left,right,midY){
 function drawHoop(side,midY){
   const x=side==="left"?75:worldWidth-75;
   const dir=side==="left"?-1:1;
-  const y=isoY(midY);
+  const y=isoY(midY)-24;
+  if(hoopImage.complete&&hoopImage.naturalWidth){
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.scale(side==="left"?1:-1,1);
+    // The rim center in the 512px source is approximately (344, 266).
+    const size=116;
+    ctx.drawImage(hoopImage,-344/512*size,-266/512*size,size,size);
+    ctx.restore();
+    return;
+  }
 
   ctx.strokeStyle="#dfe8f2";
   ctx.lineWidth=5;
@@ -1892,7 +1930,7 @@ function drawHoop(side,midY){
   ctx.strokeStyle="#ffb02e";
   ctx.lineWidth=4;
   ctx.beginPath();
-  ctx.ellipse(x,isoY(midY),18,10,0,0,Math.PI*2);
+  ctx.ellipse(x,y,18,10,0,0,Math.PI*2);
   ctx.stroke();
 
   ctx.strokeStyle="#ffffff80";
@@ -1940,7 +1978,7 @@ function drawCourt(){
 function drawHuman(p){
   const sx=p.x;
   const sy=isoY(p.y);
-  const scale=.85+p.y/canvas.height*.35;
+  const scale=.85+p.y/worldHeight*.35;
   const walk=Math.sin(p.anim)*4;
   const side=p.dir;
   const dunkPose=p.dunkAnim>0;
@@ -2162,6 +2200,46 @@ function draw(){
   ctx.textAlign="center";
   ctx.fillText(`MY ${myScore} - ${enemyScore} ENEMY`,canvas.width/2,32);
   ctx.fillText(`TIME ${Math.ceil(time)}`,canvas.width/2,60);
+  if(scoreEffect){
+    const e=scoreEffect,t=1.8-e.remaining;
+    const strong=e.dunk||e.points===3;
+    const reduced=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    ctx.save();
+    ctx.globalAlpha=Math.min(1,e.remaining*3);
+    const x=canvas.width/2,y=isPhoneLandscape()?128:160;
+    const color=e.team==="my"?"#65ffe0":"#ff9292";
+    ctx.strokeStyle=color;
+    ctx.lineWidth=5;
+    ctx.strokeRect(3,3,canvas.width-6,canvas.height-6);
+    if(!reduced){
+      ctx.save();ctx.globalAlpha*=Math.max(0,1-t/1.1);
+      ctx.lineWidth=3;
+      ctx.beginPath();ctx.ellipse(x,y,30+t*180,18+t*65,0,0,Math.PI*2);ctx.stroke();
+      ctx.restore();
+      const count=strong?64:38;
+      for(let i=0;i<count;i++){
+        const a=i*2.39996,speed=45+(i%9)*13;
+        ctx.save();
+        ctx.translate(x+Math.cos(a)*(25+t*speed),y+Math.sin(a)*(15+t*speed*.65)+t*t*35);
+        ctx.rotate(a+t*(i%2?3:-3));
+        ctx.fillStyle=[color,'#ffd65c','#ffffff','#ff80bd'][i%4];
+        ctx.fillRect(-3,-2,i%3===0?10:5,4);ctx.restore();
+      }
+    }
+    ctx.save();
+    ctx.translate(x,y);
+    const pop=reduced?1:1+Math.sin(Math.min(1,t/.35)*Math.PI)*.16;
+    ctx.scale(pop,pop);
+    ctx.font=`900 ${strong?46:38}px sans-serif`;
+    ctx.textAlign='center';ctx.lineJoin='round';ctx.lineWidth=7;
+    ctx.strokeStyle='#14202b';ctx.fillStyle=strong?'#ffe278':color;
+    const title=`${e.team==='my'?'MY':'ENEMY'} +${e.points}`;
+    ctx.strokeText(title,0,0,(canvas.width-40)/1.16);ctx.fillText(title,0,0,(canvas.width-40)/1.16);
+    ctx.font='bold 23px sans-serif';ctx.lineWidth=5;ctx.fillStyle='#ffffff';
+    ctx.strokeText(e.label,0,32,(canvas.width-40)/1.16);ctx.fillText(e.label,0,32,(canvas.width-40)/1.16);
+    ctx.restore();
+    ctx.restore();
+  }
 
   ctx.font=isPhoneLandscape()?"11px sans-serif":"13px sans-serif";
   ctx.fillText(
