@@ -10,7 +10,7 @@ canvas{display:block;margin:auto;background:#151515;touch-action:none}
 .topbar{position:fixed;left:0;right:0;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(10px + env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 10px max(12px,env(safe-area-inset-left));box-sizing:border-box;pointer-events:none}
 .brand{font-weight:900;letter-spacing:.08em;text-shadow:0 2px 8px #000;font-size:clamp(18px,3vw,26px)}
 .menu{display:flex;gap:8px;pointer-events:auto;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.menu button,.difficulty button,.duration button,.primary{width:auto;height:38px;border-radius:8px;border:1px solid #ffffff33;background:#f6f8fb;color:#131820;font-weight:800;font-size:16px;padding:0 14px;box-shadow:0 4px 12px #0005}
+.menu button,.difficulty button,.duration button,.mode button,.primary{width:auto;height:38px;border-radius:8px;border:1px solid #ffffff33;background:#f6f8fb;color:#131820;font-weight:800;font-size:16px;padding:0 14px;box-shadow:0 4px 12px #0005}
 .menu button.secondary{background:#29313d;color:#fff}
 button:disabled{opacity:.45}
 button.pad-focus{outline:3px solid #50ffd3;outline-offset:3px;box-shadow:0 0 0 6px #101318}
@@ -23,10 +23,11 @@ button.pad-focus{outline:3px solid #50ffd3;outline-offset:3px;box-shadow:0 0 0 6
 .panel{width:min(520px,calc(100vw - 34px));padding:26px;border:1px solid #ffffff24;background:#151b24e8;border-radius:8px;box-shadow:0 22px 60px #0009;text-align:center}
 .panel h1{margin:0 0 8px;font-size:clamp(30px,8vw,54px);line-height:1}
 .panel p{margin:8px 0 18px;color:#d7e0eb;line-height:1.55}
-.difficulty,.duration{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0}
+.difficulty,.duration,.mode{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0}
 .duration{grid-template-columns:repeat(2,1fr);margin-top:10px}
-.difficulty button,.duration button{height:58px;background:#202936;color:#eaf1f8}
-.difficulty button.active,.duration button.active{background:#f3c15f;color:#111820;border-color:#fff}
+.mode{grid-template-columns:repeat(2,1fr);margin:10px 0}
+.difficulty button,.duration button,.mode button{height:58px;background:#202936;color:#eaf1f8}
+.difficulty button.active,.duration button.active,.mode button.active{background:#f3c15f;color:#111820;border-color:#fff}
 .panelActions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 .offscreen{position:fixed;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:#020305;color:#dce5ef;text-align:center;font-weight:800;font-size:22px}
 .offscreen.hidden{display:none}
@@ -37,6 +38,7 @@ button.pad-focus{outline:3px solid #50ffd3;outline-offset:3px;box-shadow:0 0 0 6
   .menu button{height:34px;padding:0 10px}
   .difficulty{grid-template-columns:1fr}
   .duration{grid-template-columns:1fr}
+  .mode{grid-template-columns:1fr}
   .stick{width:112px;height:112px}
   .knob{left:38px;top:38px}
   .buttons button{width:66px;height:66px;font-size:16px}
@@ -58,6 +60,8 @@ button.pad-focus{outline:3px solid #50ffd3;outline-offset:3px;box-shadow:0 0 0 6
   .difficulty button{height:42px}
   .duration{grid-template-columns:repeat(2,1fr);margin:8px 0}
   .duration button{height:38px}
+  .mode{grid-template-columns:repeat(2,1fr);margin:8px 0}
+  .mode button{height:38px}
 }
 </style>
 </head>
@@ -78,6 +82,10 @@ button.pad-focus{outline:3px solid #50ffd3;outline-offset:3px;box-shadow:0 0 0 6
   <div class="panel">
     <h1>BASKET 3ON3</h1>
     <p>難易度を選んで試合開始。初級はシュートが入りやすく、中級、上級へ進むほどタイミングと距離が大切になります。</p>
+    <div class="mode">
+      <button data-mode="cpu" class="active">CPU対戦</button>
+      <button data-mode="versus">2P対戦</button>
+    </div>
     <div class="difficulty">
       <button data-difficulty="beginner" class="active">初級</button>
       <button data-difficulty="intermediate">中級</button>
@@ -119,14 +127,17 @@ const offscreen=document.getElementById("offscreen");
 const resumeBtn=document.getElementById("resumeBtn");
 const pauseBtn=document.getElementById("pauseBtn");
 const endBtn=document.getElementById("endBtn");
+const stealBtn=document.getElementById("stealBtn");
 const difficultyButtons=[...document.querySelectorAll("[data-difficulty]")];
 const durationButtons=[...document.querySelectorAll("[data-duration]")];
+const modeButtons=[...document.querySelectorAll("[data-mode]")];
 const introText="難易度を選んで試合開始。初級はシュートが入りやすく、中級、上級へ進むほどタイミングと距離が大切になります。";
 let worldWidth=0;
 let worldHeight=0;
 let cameraX=0;
 let cameraY=0;
 let gameDuration=60;
+let gameMode="cpu";
 let audioCtx=null;
 let soundEnabled=false;
 let lastDribbleSound=0;
@@ -508,7 +519,8 @@ const FIXED_DT=1/60;
 let time=60,myScore=0,enemyScore=0,gameOver=false,last=performance.now(),accumulator=0,frame=0;
 let gameState="title";
 let currentDifficulty="beginner";
-let prevPad={a:false,b:false,x:false};
+let prevPads=[{a:false,b:false,x:false},{a:false,b:false,x:false}];
+const passTargetIndex={my:0,enemy:0};
 let message="";
 let messageTimer=0;
 let passLink=null;
@@ -600,6 +612,7 @@ function difficulty(){
 
 const players=[];
 let controlPlayerRef=null;
+let opponentControlRef=null;
 
 const ball={
   x:0,y:0,z:0,vx:0,vy:0,
@@ -657,25 +670,30 @@ function ballControlPoint(){
   return h?{x:h.x,y:h.y}:ball;
 }
 
-function nearestMyPlayerToBall(){
+function nearestTeamPlayerToBall(team){
   const focus=ballControlPoint();
-  return getTeam("my").sort((a,b)=>dist(a,focus)-dist(b,focus))[0]||null;
+  return getTeam(team).sort((a,b)=>dist(a,focus)-dist(b,focus))[0]||null;
 }
 
-function updateControlPlayer(force=false){
-  if(controlPlayerRef?.charging||controlPlayerRef?.dunkAnim>0)return;
-  const candidate=nearestMyPlayerToBall();
+function updateTeamControl(team,force=false){
+  const current=team==="my"?controlPlayerRef:opponentControlRef;
+  if(current?.charging||current?.dunkAnim>0)return;
+  const candidate=nearestTeamPlayerToBall(team);
   if(!candidate)return;
   const focus=ballControlPoint();
-  if(force||!controlPlayerRef||controlPlayerRef.team!=="my"){
-    controlPlayerRef=candidate;
+  if(force||!current||current.team!==team){
+    if(team==="my")controlPlayerRef=candidate;else opponentControlRef=candidate;
     return;
   }
-  const currentD=dist(controlPlayerRef,focus);
+  const currentD=dist(current,focus);
   const candidateD=dist(candidate,focus);
   if(candidate.hasBall||candidateD+18<currentD){
-    controlPlayerRef=candidate;
+    if(team==="my")controlPlayerRef=candidate;else opponentControlRef=candidate;
   }
+}
+function updateControlPlayer(force=false){
+  updateTeamControl("my",force);
+  if(gameMode==="versus")updateTeamControl("enemy",force);
 }
 
 function clearHolder(){
@@ -701,6 +719,7 @@ function setHolder(p){
   if(p.team==="my"){
     controlPlayerRef=p;
   }else{
+    if(gameMode==="versus")opponentControlRef=p;
     updateControlPlayer(true);
   }
 }
@@ -785,7 +804,9 @@ function resetMatch(){
   lastDribbleSound=0;
   lastDribbleBounce=99;
   chooseBallImage();
-  prevPad={a:false,b:false,x:false};
+  prevPads=[{a:false,b:false,x:false},{a:false,b:false,x:false}];
+  passTargetIndex.my=0;passTargetIndex.enemy=0;
+  opponentControlRef=null;
   resetPositions("my");
   last=performance.now();
   accumulator=0;
@@ -805,10 +826,19 @@ function refreshUI(){
   durationButtons.forEach(btn=>{
     btn.classList.toggle("active",Number(btn.dataset.duration)===gameDuration);
   });
+  modeButtons.forEach(btn=>btn.classList.toggle("active",btn.dataset.mode===gameMode));
+}
+
+function connectedGamepads(){
+  return [...(navigator.getGamepads?navigator.getGamepads():[])].filter(Boolean);
 }
 
 function startGame(){
   resumeAudio();
+  if(gameMode==="versus"&&connectedGamepads().length<2){
+    titleOverlay.querySelector("p").textContent="2P対戦にはゲームパッドが2台必要です。両方のゲームパッドでボタンを一度押してから開始してください。";
+    return;
+  }
   offscreen.classList.add("hidden");
   titleOverlay.querySelector("p").textContent=introText;
   resetMatch();
@@ -873,6 +903,15 @@ durationButtons.forEach(btn=>{
   btn.addEventListener("click",()=>{
     gameDuration=Number(btn.dataset.duration);
     titleOverlay.querySelector("p").textContent=introText;
+    refreshUI();
+  });
+});
+modeButtons.forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    gameMode=btn.dataset.mode;
+    titleOverlay.querySelector("p").textContent=gameMode==="versus"
+      ?"ゲームパッド2台で対戦。Bでパス先を切り替え、Xでパス。ボールを持っていない時のBはボールを奪います。"
+      :introText;
     refreshUI();
   });
 });
@@ -1192,7 +1231,7 @@ function updateGamepadMenu(now){
   const edge=i=>pressed[i]&&!menuPadPrevious[i];
   const accept=edge(0),back=edge(1),start=edge(9);
   menuPadPrevious=pressed;
-  if(menuPadBlock&&!pressed[0]&&!pressed[1]&&!pressed[2])menuPadBlock=false;
+  if(menuPadBlock&&connectedGamepads().every(p=>![0,1,2].some(i=>p.buttons[i]?.pressed)))menuPadBlock=false;
   if(start){
     menuPadBlock=true;
     if(gameState==="off")quitGame();
@@ -1210,7 +1249,7 @@ function updateGamepadMenu(now){
   }
   const rows=[
     gameState==="paused"?[resumeBtn,endBtn]:[],
-    difficultyButtons,durationButtons,[startBtn,quitBtn,appOffBtn]
+    modeButtons,difficultyButtons,durationButtons,[startBtn,quitBtn,appOffBtn]
   ].map(row=>row.filter(b=>!b.disabled&&b.style.display!=="none")).filter(row=>row.length);
   const buttons=rows.flat();
   const focus=button=>{
@@ -1249,10 +1288,9 @@ function updateGamepadMenu(now){
   }
 }
 
-function getGamepadInput(){
+function getGamepadInput(playerNumber=0){
   if(menuPadBlock)return {x:0,y:0,a:false,b:false,xbtn:false};
-  const pads=navigator.getGamepads?navigator.getGamepads():[];
-  const gp=[...pads].find(Boolean);
+  const gp=connectedGamepads()[playerNumber];
   if(!gp)return {x:0,y:0,a:false,b:false,xbtn:false};
 
   return {
@@ -1264,14 +1302,38 @@ function getGamepadInput(){
   };
 }
 
-function manualControl(p){
-  const pad=getGamepadInput();
+function passCandidates(p){
+  return getTeam(p.team).filter(m=>m!==p).sort((a,b)=>a.y-b.y);
+}
+
+function selectedPassTarget(p){
+  const candidates=passCandidates(p);
+  if(!candidates.length)return null;
+  passTargetIndex[p.team]=clamp(passTargetIndex[p.team],0,candidates.length-1);
+  return candidates[passTargetIndex[p.team]];
+}
+
+function stealOrSelect(p){
+  if(!p)return;
+  if(p.hasBall&&ball.mode==="held"){
+    const candidates=passCandidates(p);
+    if(candidates.length)passTargetIndex[p.team]=(passTargetIndex[p.team]+1)%candidates.length;
+    return;
+  }
+  steal(p);
+}
+
+function manualControl(p,playerNumber=0){
+  const pad=getGamepadInput(playerNumber);
+  const previous=prevPads[playerNumber];
 
   let ax=0,ay=0;
-  if(keys["w"]||keys["arrowup"])ay--;
-  if(keys["s"]||keys["arrowdown"])ay++;
-  if(keys["a"]||keys["arrowleft"])ax--;
-  if(keys["d"]||keys["arrowright"])ax++;
+  if(playerNumber===0){
+    if(keys["w"]||keys["arrowup"])ay--;
+    if(keys["s"]||keys["arrowdown"])ay++;
+    if(keys["a"]||keys["arrowleft"])ax--;
+    if(keys["d"]||keys["arrowright"])ax++;
+  }
 
   ax+=joy.x+pad.x;
   ay+=joy.y+pad.y;
@@ -1288,21 +1350,19 @@ function manualControl(p){
     p.moving=true;
   }
 
-  if(keys["j"])steal(p);
-  if(keys["k"])pass(p);
+  if(playerNumber===0&&keys["j"]&&!p.hasBall)steal(p);
+  if(playerNumber===0&&keys["k"])pass(p,selectedPassTarget(p));
 
-  if(pad.a&&!prevPad.a)startCharge(p);
-  if(!pad.a&&prevPad.a)releaseShot(p);
-  if(pad.b&&!prevPad.b)steal(p);
-  if(pad.xbtn&&!prevPad.x)pass(p);
+  if(pad.a&&!previous.a)startCharge(p);
+  if(!pad.a&&previous.a)releaseShot(p);
+  if(pad.b&&!previous.b)stealOrSelect(p);
+  if(pad.xbtn&&!previous.x)pass(p,selectedPassTarget(p));
 
-  prevPad.a=pad.a;
-  prevPad.b=pad.b;
-  prevPad.x=pad.xbtn;
+  previous.a=pad.a;previous.b=pad.b;previous.x=pad.xbtn;
 }
 
-bindTap(document.getElementById("stealBtn"),()=>steal(controlPlayerRef),220);
-bindTap(document.getElementById("passBtn"),()=>pass(controlPlayerRef),420);
+bindTap(stealBtn,()=>stealOrSelect(controlPlayerRef),220);
+bindTap(document.getElementById("passBtn"),()=>pass(controlPlayerRef,selectedPassTarget(controlPlayerRef)),420);
 bindHold(document.getElementById("shootBtn"),()=>startCharge(controlPlayerRef),()=>releaseShot(controlPlayerRef));
 
 function myAI(p){
@@ -1642,12 +1702,13 @@ function update(dt=FIXED_DT){
       looseBallAI(p);
     }else if(p.team==="my"){
       if(p===controlPlayerRef){
-        manualControl(p);
+        manualControl(p,0);
       }else{
         myAI(p);
       }
     }else{
-      enemyAI(p);
+      if(gameMode==="versus"&&p===opponentControlRef)manualControl(p,1);
+      else enemyAI(p);
     }
 
     if(inboundTimer<=0&&p.hasBall&&isOut(p.x,p.y,-8)){
@@ -1679,7 +1740,7 @@ function isoY(y){
 
 function updateCamera(){
   const h=getHolder();
-  const target=h&&h.team==="my"?h:controlPlayerRef||h||ball;
+  const target=gameMode==="versus"?(h||ball):(h&&h.team==="my"?h:controlPlayerRef||h||ball);
   const desired=(target?.x||worldWidth/2)-canvas.width*.5;
   cameraX+= (desired-cameraX)*.12;
   // Keep the whole court stationary when it fits; scroll only at the edges.
@@ -1987,8 +2048,9 @@ function drawHuman(p){
   const shootPose=p.shootingAnim>0||p.charging||dunkPose;
 
   if(drawPlayerSprite(p,sx,sy,scale,jump)){
-    if(p===controlPlayerRef){
-      ctx.strokeStyle="#00ffcc";
+    const controller=controllerNumber(p);
+    if(controller>=0){
+      ctx.strokeStyle=controller===0?"#00ffcc":"#ff9d3d";
       ctx.lineWidth=3;
       ctx.beginPath();
       ctx.ellipse(sx,sy+16,24,9,0,0,Math.PI*2);
@@ -2003,6 +2065,7 @@ function drawHuman(p){
       ctx.stroke();
     }
 
+    drawPassTargetMarker(p,sx,sy-jump,scale);
     if(p.charging)drawGauge(p,sx,sy-jump);
     return;
   }
@@ -2075,12 +2138,13 @@ function drawHuman(p){
   ctx.fillStyle="#fff";
   ctx.font="10px sans-serif";
   ctx.textAlign="center";
-  ctx.fillText(p===controlPlayerRef?"操作":p.team==="my"?"味方":"敵",0,-38);
+  const controller=controllerNumber(p);
+  ctx.fillText(controller>=0?`${controller+1}P`:p.team==="my"?"味方":"敵",0,-38);
 
   ctx.restore();
 
-  if(p===controlPlayerRef){
-    ctx.strokeStyle="#00ffcc";
+  if(controller>=0){
+    ctx.strokeStyle=controller===0?"#00ffcc":"#ff9d3d";
     ctx.lineWidth=3;
     ctx.beginPath();
     ctx.ellipse(sx,sy+16,24,9,0,0,Math.PI*2);
@@ -2095,7 +2159,40 @@ function drawHuman(p){
     ctx.stroke();
   }
 
+  drawPassTargetMarker(p,sx,sy-jump,scale);
   if(p.charging)drawGauge(p,sx,sy-jump);
+}
+
+function controllerNumber(p){
+  if(p===controlPlayerRef)return 0;
+  if(gameMode==="versus"&&p===opponentControlRef)return 1;
+  return -1;
+}
+
+function drawPassTargetMarker(p,sx,sy,scale){
+  const holder=getHolder();
+  if(!holder||controllerNumber(holder)<0)return;
+  const candidates=passCandidates(holder);
+  const index=candidates.indexOf(p);
+  if(index<0)return;
+  const selected=selectedPassTarget(holder)===p;
+  const color="#45ddff";
+  const size=selected?14:10;
+  const y=sy-102*scale;
+  ctx.save();
+  ctx.globalAlpha=selected?1:.62;
+  ctx.fillStyle=color;
+  ctx.strokeStyle=selected?"#fff":"#14202b";
+  ctx.lineWidth=selected?3:2;
+  if(selected){
+    ctx.beginPath();ctx.arc(sx,y,19,0,Math.PI*2);ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.moveTo(sx-size,y-size*.65);
+  ctx.lineTo(sx+size,y-size*.65);
+  ctx.lineTo(sx,y+size);
+  ctx.closePath();ctx.fill();ctx.stroke();
+  ctx.restore();
 }
 
 function playerAnimName(p){
@@ -2185,6 +2282,7 @@ function drawBall(){
 
 function draw(){
   updateCamera();
+  stealBtn.textContent=controlPlayerRef?.hasBall?"パス先":"奪う";
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   ctx.save();
@@ -2245,7 +2343,9 @@ function draw(){
   ctx.fillText(
     isPhoneLandscape()
       ? `${difficulty().stageName} / ${difficulty().label}`
-      : `${difficulty().stageName} / 難易度：${difficulty().label} / J 奪う  K パス  L シュート / 相手陣地でシュート可`,
+      : gameMode==="versus"
+        ? `${difficulty().stageName} / 2P対戦 / A シュート  B パス先・奪う  X パス`
+        : `${difficulty().stageName} / 難易度：${difficulty().label} / J 奪う  K パス  L シュート / 相手陣地でシュート可`,
     canvas.width/2,
     isPhoneLandscape()?78:canvas.height-8
   );
